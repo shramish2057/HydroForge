@@ -235,6 +235,28 @@ function face_depth_y(h::Matrix{T}, z::Matrix{T}, i::Int, j::Int) where T
 end
 
 """
+    limit_froude(q, h, g, max_froude)
+
+Limit discharge to prevent supercritical flow (Fr > max_froude).
+Returns limited discharge such that |q|/h ≤ max_froude × √(gh)
+"""
+function limit_froude(q::T, h::T, g::T, max_froude::T=T(0.9)) where T
+    if h <= zero(T)
+        return zero(T)
+    end
+
+    # Maximum velocity for subcritical flow
+    v_max = max_froude * sqrt(g * h)
+    q_max = h * v_max
+
+    # Limit discharge magnitude
+    if abs(q) > q_max
+        return sign(q) * q_max
+    end
+    return q
+end
+
+"""
     compute_flux_x!(qx_new, qx, h, z, n, grid, params, dt)
 
 Compute x-direction fluxes using local inertial approximation.
@@ -250,6 +272,11 @@ q^{n+1} = (q^n - g h_f dt ∂η/∂x) / (1 + g dt n² |q| / h_f^{10/3})
 - `grid`: Computational grid
 - `params`: Simulation parameters
 - `dt`: Timestep
+
+# Features
+- Semi-implicit friction for unconditional stability
+- Froude number limiting to prevent supercritical instabilities
+- Wetting/drying treatment at cell interfaces
 """
 function compute_flux_x!(qx_new::Matrix{T}, qx::Matrix{T}, h::Matrix{T},
                          z::Matrix{T}, n::Matrix{T}, grid::Grid{T},
@@ -259,9 +286,12 @@ function compute_flux_x!(qx_new::Matrix{T}, qx::Matrix{T}, h::Matrix{T},
     dx = grid.dx
     nx, ny = grid.nx, grid.ny
 
+    # Froude limit for stability (0.9 keeps flow subcritical)
+    max_froude = T(0.9)
+
     @inbounds for j in 1:ny
         for i in 1:nx-1
-            # Face depth
+            # Face depth using upwind reconstruction
             h_f = face_depth_x(h, z, i, j)
 
             if h_f > h_min
@@ -276,11 +306,15 @@ function compute_flux_x!(qx_new::Matrix{T}, qx::Matrix{T}, h::Matrix{T},
                 # Current flux at face (interpolated)
                 q_f = (qx[i, j] + qx[i+1, j]) / 2
 
-                # Friction factor (semi-implicit)
+                # Friction factor (semi-implicit treatment for stability)
+                # D = 1 + g dt n² |q| / h^(10/3)
                 D = one(T) + g * dt * n_f^2 * abs(q_f) / h_f^(T(10)/T(3))
 
-                # New flux
-                qx_new[i, j] = (q_f - g * h_f * dt * dη_dx) / D
+                # New flux from momentum equation
+                q_new = (q_f - g * h_f * dt * dη_dx) / D
+
+                # Apply Froude limiting to prevent supercritical instabilities
+                qx_new[i, j] = limit_froude(q_new, h_f, g, max_froude)
             else
                 qx_new[i, j] = zero(T)
             end
@@ -296,6 +330,11 @@ end
     compute_flux_y!(qy_new, qy, h, z, n, grid, params, dt)
 
 Compute y-direction fluxes using local inertial approximation.
+
+# Features
+- Semi-implicit friction for unconditional stability
+- Froude number limiting to prevent supercritical instabilities
+- Wetting/drying treatment at cell interfaces
 """
 function compute_flux_y!(qy_new::Matrix{T}, qy::Matrix{T}, h::Matrix{T},
                          z::Matrix{T}, n::Matrix{T}, grid::Grid{T},
@@ -305,9 +344,12 @@ function compute_flux_y!(qy_new::Matrix{T}, qy::Matrix{T}, h::Matrix{T},
     dy = grid.dy
     nx, ny = grid.nx, grid.ny
 
+    # Froude limit for stability
+    max_froude = T(0.9)
+
     @inbounds for j in 1:ny-1
         for i in 1:nx
-            # Face depth
+            # Face depth using upwind reconstruction
             h_f = face_depth_y(h, z, i, j)
 
             if h_f > h_min
@@ -316,17 +358,20 @@ function compute_flux_y!(qy_new::Matrix{T}, qy::Matrix{T}, h::Matrix{T},
                 η_T = h[i, j+1] + z[i, j+1]
                 dη_dy = (η_T - η_B) / dy
 
-                # Face roughness
+                # Face roughness (average)
                 n_f = (n[i, j] + n[i, j+1]) / 2
 
-                # Current flux
+                # Current flux at face (interpolated)
                 q_f = (qy[i, j] + qy[i, j+1]) / 2
 
-                # Friction factor
+                # Friction factor (semi-implicit)
                 D = one(T) + g * dt * n_f^2 * abs(q_f) / h_f^(T(10)/T(3))
 
-                # New flux
-                qy_new[i, j] = (q_f - g * h_f * dt * dη_dy) / D
+                # New flux from momentum equation
+                q_new = (q_f - g * h_f * dt * dη_dy) / D
+
+                # Apply Froude limiting
+                qy_new[i, j] = limit_froude(q_new, h_f, g, max_froude)
             else
                 qy_new[i, j] = zero(T)
             end

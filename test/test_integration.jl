@@ -364,3 +364,133 @@ end
     # Max velocity should be computed at wet cell
     @test results.max_velocity[5, 5] > 0
 end
+
+@testset "Professional Hazard Analysis Features" begin
+    @testset "Hazard Rating Calculation" begin
+        # hazard_rating(h, v) = h × v
+        @test hazard_rating(1.0, 1.0) ≈ 1.0
+        @test hazard_rating(0.5, 2.0) ≈ 1.0
+        @test hazard_rating(0.0, 5.0) ≈ 0.0
+    end
+
+    @testset "Froude Number Calculation" begin
+        g = 9.81
+        # Fr = v / √(gh)
+        h = 1.0
+        v = sqrt(g * h)  # Fr = 1 (critical flow)
+        @test froude_number(v, h, g) ≈ 1.0
+
+        # Subcritical
+        @test froude_number(0.5, 1.0, g) < 1.0
+
+        # Supercritical
+        @test froude_number(5.0, 1.0, g) > 1.0
+
+        # Zero depth
+        @test froude_number(1.0, 0.0, g) == 0.0
+    end
+
+    @testset "Hazard Categories (DEFRA FD2320)" begin
+        @test hazard_category(0.1) == :low
+        @test hazard_category(0.25) == :moderate
+        @test hazard_category(0.49) == :moderate
+        @test hazard_category(0.5) == :significant
+        @test hazard_category(1.24) == :significant
+        @test hazard_category(1.25) == :extreme
+        @test hazard_category(5.0) == :extreme
+    end
+
+    @testset "Froude Limiting" begin
+        g = 9.81
+        h = 1.0
+        max_fr = 0.9
+
+        # Subcritical flow - should not be limited
+        q_sub = 0.5 * h  # Low velocity
+        @test limit_froude(q_sub, h, g, max_fr) ≈ q_sub
+
+        # Supercritical flow - should be limited
+        q_super = 10.0 * h  # Very high velocity
+        q_limited = limit_froude(q_super, h, g, max_fr)
+        @test q_limited < q_super
+        @test q_limited / h ≈ max_fr * sqrt(g * h) atol=1e-10
+
+        # Negative flow - should maintain sign
+        q_neg = -10.0 * h
+        q_neg_limited = limit_froude(q_neg, h, g, max_fr)
+        @test q_neg_limited < 0
+        @test abs(q_neg_limited) ≈ abs(limit_froude(abs(q_neg), h, g, max_fr))
+    end
+
+    @testset "Results Accumulator - New Fields" begin
+        grid = Grid(10, 10, 10.0)
+        state = SimulationState(grid)
+
+        # Set up some flow
+        state.h[5, 5] = 1.0
+        state.qx[5, 5] = 0.5
+        state.qy[5, 5] = 0.3
+        state.t = 10.0
+
+        results = ResultsAccumulator(grid, Tuple{Int,Int}[])
+
+        # Update with dt for duration tracking
+        update_results!(results, state, 1.0; g=9.81)
+
+        # Check new fields are populated
+        @test results.max_hazard[5, 5] > 0
+        @test results.max_froude[5, 5] > 0
+        @test results.total_duration[5, 5] == 1.0
+        @test results.last_wet[5, 5] == true
+    end
+
+    @testset "Hazard Summary Statistics" begin
+        grid = Grid(10, 10, 10.0)
+        state = SimulationState(grid)
+
+        # Set up various hazard levels
+        state.h[3, 3] = 0.1  # Low depth, low hazard
+        state.qx[3, 3] = 0.01
+
+        state.h[5, 5] = 0.5  # Medium depth, medium hazard
+        state.qx[5, 5] = 0.5
+
+        state.h[7, 7] = 1.0  # High depth, high hazard
+        state.qx[7, 7] = 2.0
+
+        results = ResultsAccumulator(grid, Tuple{Int,Int}[])
+        update_results!(results, state, 60.0; g=9.81)
+
+        summary = summarize_hazard(results, grid)
+
+        @test summary["max_depth"] > 0
+        @test summary["max_hazard"] > 0
+        @test summary["max_froude"] > 0
+        @test haskey(summary, "area_low_hazard")
+        @test haskey(summary, "area_extreme_hazard")
+        @test haskey(summary, "mean_duration")
+    end
+
+    @testset "Point Hydrograph with Discharge" begin
+        grid = Grid(10, 10, 10.0)
+        output_points = [(5, 5)]
+        results = ResultsAccumulator(grid, output_points)
+
+        state = SimulationState(grid)
+        state.h[5, 5] = 0.5
+        state.qx[5, 5] = 0.1
+        state.qy[5, 5] = 0.2
+        state.t = 10.0
+
+        record_output!(results, state)
+
+        # Check that hydrograph includes (t, h, qx, qy)
+        @test length(results.point_hydrographs[(5, 5)]) == 1
+        record = results.point_hydrographs[(5, 5)][1]
+        @test length(record) == 4  # (t, h, qx, qy)
+        @test record[1] ≈ 10.0  # time
+        @test record[2] ≈ 0.5   # depth
+        @test record[3] ≈ 0.1   # qx
+        @test record[4] ≈ 0.2   # qy
+    end
+end

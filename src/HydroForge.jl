@@ -91,7 +91,7 @@ include("numerics/boundaries.jl")
 export TimestepController, compute_dt, compute_dt_array, compute_dt_smooth!, check_cfl
 export compute_velocity, water_surface_elevation, water_surface_elevation!
 export surface_gradient, surface_gradient!
-export is_wet, wet_dry_factor, limit_flux_wetdry!
+export is_wet, wet_dry_factor, limit_flux_wetdry!, limit_froude
 export face_depth_x, face_depth_y, compute_flux_x!, compute_flux_y!
 export BoundaryType, CLOSED, OPEN, FIXED_DEPTH, BoundaryCondition
 export apply_boundaries!, apply_closed_boundaries!, apply_open_boundaries!
@@ -134,6 +134,7 @@ include("models/simulation.jl")
 export SimulationWorkspace, step!, update_depth!, run_simulation!, run_simulation_simple!
 export SimulationResults, log_progress
 export ResultsAccumulator, update_results!, record_output!
+export hazard_rating, froude_number, hazard_category, summarize_hazard
 export RunConfig, create_run_config
 export RunMetadata, create_metadata, get_git_commit
 export run, run_demo, load_scenario, save_results, save_metadata
