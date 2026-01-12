@@ -197,6 +197,29 @@ export compute_exchange_flows!, apply_exchange_to_surface!
 export step_coupled!, compute_dt_coupled, CoupledResults, run_coupled!
 
 # =============================================================================
+# Parallel Computing
+# =============================================================================
+include("parallel/backends.jl")
+include("parallel/kernels.jl")
+include("parallel/gpu_kernels.jl")
+include("parallel/simulation.jl")
+
+# Export parallel computing
+export ComputeBackend, SerialBackend, ThreadedBackend, GPUBackend
+export get_backend, set_backend!, backend_info
+export gpu_available, enable_gpu!, disable_gpu!
+export parallel_for, parallel_for_2d, parallel_reduce
+export parallel_fill!, parallel_copy!, parallel_maximum, parallel_sum
+export ParallelWorkspace, step_parallel!, run_simulation_parallel!
+export benchmark_backends, auto_select_backend
+
+# Export threaded kernels
+export compute_flux_x_threaded!, compute_flux_y_threaded!
+export update_depth_threaded!, update_results_threaded!
+export compute_dt_threaded, apply_rainfall_threaded!
+export enforce_positive_depth_threaded!
+
+# =============================================================================
 # CLI
 # =============================================================================
 include("cli/main.jl")

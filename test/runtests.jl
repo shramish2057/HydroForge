@@ -34,4 +34,8 @@ using HydroForge
         include("test_cli.jl")
     end
 
+    @testset "Parallel Computing" begin
+        include("test_parallel.jl")
+    end
+
 end
