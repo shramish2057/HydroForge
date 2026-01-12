@@ -2,6 +2,95 @@
 # CFL-based adaptive timestepping
 
 """
+    TimestepController{T}
+
+Manages adaptive timestepping with smoothing and history tracking.
+
+# Fields
+- `dt_history::Vector{T}`: Recent timestep values
+- `history_size::Int`: Maximum history size
+- `smoothing_factor::T`: Smoothing for timestep changes (0.5-0.9)
+- `min_dt_warning::T`: Warn if dt falls below this value
+- `warning_issued::Bool`: Track if warning was issued
+"""
+mutable struct TimestepController{T<:AbstractFloat}
+    dt_history::Vector{T}
+    history_size::Int
+    smoothing_factor::T
+    min_dt_warning::T
+    warning_issued::Bool
+end
+
+"""
+    TimestepController(T=Float64; history_size=10, smoothing_factor=0.7, min_dt_warning=0.001)
+
+Create a timestep controller with default settings.
+"""
+function TimestepController(::Type{T}=Float64;
+                            history_size::Int=10,
+                            smoothing_factor::Real=0.7,
+                            min_dt_warning::Real=0.001) where T<:AbstractFloat
+    TimestepController{T}(
+        T[],
+        history_size,
+        T(smoothing_factor),
+        T(min_dt_warning),
+        false
+    )
+end
+
+"""
+    compute_dt_smooth!(controller::TimestepController, dt_raw::T) where T
+
+Apply smoothing to prevent sudden timestep changes.
+Returns smoothed timestep and updates history.
+"""
+function compute_dt_smooth!(controller::TimestepController{T}, dt_raw::T) where T
+    # Add to history
+    push!(controller.dt_history, dt_raw)
+    if length(controller.dt_history) > controller.history_size
+        popfirst!(controller.dt_history)
+    end
+
+    # If first timestep, no smoothing
+    if length(controller.dt_history) == 1
+        return dt_raw
+    end
+
+    # Smooth with previous value
+    dt_prev = controller.dt_history[end-1]
+    α = controller.smoothing_factor
+
+    # Don't allow more than 50% reduction in single step
+    dt_min_allowed = dt_prev * 0.5
+    dt_candidate = α * dt_prev + (1 - α) * dt_raw
+
+    dt_smooth = max(dt_candidate, dt_min_allowed)
+
+    # But always respect CFL (dt_raw is the CFL limit)
+    dt_final = min(dt_smooth, dt_raw)
+
+    # Issue warning if very small
+    if dt_final < controller.min_dt_warning && !controller.warning_issued
+        @warn "Timestep has become very small" dt=dt_final min_warning=controller.min_dt_warning
+        controller.warning_issued = true
+    end
+
+    dt_final
+end
+
+"""
+    reset!(controller::TimestepController)
+
+Reset the timestep controller history.
+"""
+function reset!(controller::TimestepController{T}) where T
+    empty!(controller.dt_history)
+    controller.warning_issued = false
+    controller
+end
+
+"""
     compute_dt(state::SimulationState, grid::Grid, params::SimulationParameters)
 
 Compute stable timestep using CFL condition.
