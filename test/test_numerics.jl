@@ -505,3 +505,180 @@ end
         @test all(state.h[1, :] .== 0.0)
     end
 end
+
+@testset "Time-Varying Boundary Conditions" begin
+    @testset "BoundaryTimeSeries" begin
+        times = [0.0, 3600.0, 7200.0]
+        values = [0.0, 1.0, 0.5]
+        bts = BoundaryTimeSeries(times, values)
+
+        # Test interpolation
+        @test interpolate_boundary(bts, 0.0) ≈ 0.0
+        @test interpolate_boundary(bts, 3600.0) ≈ 1.0
+        @test interpolate_boundary(bts, 1800.0) ≈ 0.5  # Midpoint
+        @test interpolate_boundary(bts, 5400.0) ≈ 0.75  # Between 1.0 and 0.5
+
+        # Before/after range
+        @test interpolate_boundary(bts, -100.0) ≈ 0.0  # Use first value
+        @test interpolate_boundary(bts, 10000.0) ≈ 0.5  # Use last value
+    end
+
+    @testset "TidalBoundary" begin
+        # Simple semidiurnal tide: 12.42 hour period
+        period = 12.42 * 3600.0  # seconds
+        amplitude = 1.5  # meters
+        mean_level = 2.0  # meters
+
+        tide = TidalBoundary(mean_level, amplitude=amplitude, period=period)
+
+        # At t=0 (phase=0), level = mean + amplitude
+        @test tidal_level(tide, 0.0) ≈ mean_level + amplitude atol=1e-10
+
+        # At t=period/2, level = mean - amplitude
+        @test tidal_level(tide, period/2) ≈ mean_level - amplitude atol=1e-10
+
+        # At t=period/4, level = mean (halfway)
+        @test tidal_level(tide, period/4) ≈ mean_level atol=0.1
+
+        # Full period returns to start
+        @test tidal_level(tide, period) ≈ tidal_level(tide, 0.0) atol=1e-10
+    end
+
+    @testset "TidalBoundary with Phase" begin
+        period = 12.0 * 3600.0
+        amplitude = 1.0
+        mean_level = 0.0
+        phase_shift = π/2  # Start at mean, rising
+
+        tide = TidalBoundary(mean_level, amplitude=amplitude, period=period, phase=phase_shift)
+
+        # At t=0 with π/2 phase shift: cos(π/2) = 0
+        @test tidal_level(tide, 0.0) ≈ 0.0 atol=1e-10
+
+        # At t=period/4: cos(π) = -1
+        @test tidal_level(tide, period/4) ≈ -amplitude atol=1e-10
+    end
+
+    @testset "InflowHydrograph" begin
+        # Triangular hydrograph
+        times = [0.0, 1800.0, 3600.0]
+        discharges = [0.0, 10.0, 0.0]  # m³/s
+        width = 10.0  # meters
+
+        hydro = InflowHydrograph(times, discharges, width)
+
+        # Test discharge interpolation
+        @test inflow_discharge(hydro, 0.0) ≈ 0.0
+        @test inflow_discharge(hydro, 1800.0) ≈ 10.0
+        @test inflow_discharge(hydro, 900.0) ≈ 5.0  # Rising limb
+        @test inflow_discharge(hydro, 2700.0) ≈ 5.0  # Falling limb
+
+        # Test flux (Q/width)
+        @test inflow_flux(hydro, 1800.0) ≈ 1.0  # 10 m³/s / 10 m = 1 m²/s
+        @test inflow_flux(hydro, 900.0) ≈ 0.5
+    end
+
+    @testset "RatingCurve" begin
+        # Power law rating curve: Q = a * (h - c)^b
+        # Use c=0 so stages go from 0 to max_depth
+        a = 5.0
+        b = 1.5
+        c = 0.0  # reference elevation for power law
+
+        rc = RatingCurve(a, b, c)
+
+        # At stage=0, Q=0
+        @test rating_discharge(rc, 0.0) ≈ 0.0
+
+        # At stage=1.0: Q = 5 * 1^1.5 = 5
+        @test rating_discharge(rc, 1.0) ≈ a * 1.0^b atol=0.1
+
+        # At stage=2.0: Q = 5 * 2^1.5 ≈ 14.14
+        @test rating_discharge(rc, 2.0) ≈ a * 2.0^b atol=0.2
+
+        # Negative stage (below datum) returns first Q value (0)
+        @test rating_discharge(rc, -0.5) ≈ 0.0
+    end
+
+    @testset "BoundaryType Enum" begin
+        @test CLOSED isa BoundaryType
+        @test OPEN isa BoundaryType
+        @test FIXED_DEPTH isa BoundaryType
+        @test INFLOW isa BoundaryType
+        @test TIDAL isa BoundaryType
+        @test RATING_CURVE isa BoundaryType
+    end
+
+    @testset "get_boundary_value" begin
+        # Test BoundaryTimeSeries via BoundaryCondition
+        times = [0.0, 100.0]
+        values = [1.0, 2.0]
+        bts = BoundaryTimeSeries(times, values)
+        bc_ts = BoundaryCondition(FIXED_DEPTH, time_series=bts)
+        @test get_boundary_value(bc_ts, 50.0) ≈ 1.5
+
+        # Test TidalBoundary via BoundaryCondition
+        tide = TidalBoundary(5.0, amplitude=1.0, period=100.0)
+        bc_tidal = BoundaryCondition(TIDAL, tidal=tide)
+        @test get_boundary_value(bc_tidal, 0.0) ≈ 6.0  # mean + amplitude
+
+        # Test InflowHydrograph via BoundaryCondition (returns discharge Q)
+        hydro = InflowHydrograph([0.0, 100.0], [0.0, 100.0], width=10.0)
+        bc_inflow = BoundaryCondition(INFLOW, hydrograph=hydro)
+        @test get_boundary_value(bc_inflow, 50.0) ≈ 50.0  # Q=50 at t=50
+    end
+
+    @testset "apply_inflow_boundaries!" begin
+        state = SimulationState(10, 10)
+        state.h .= 0.5
+        state.qx .= 0.0
+
+        # Create an inflow hydrograph
+        hydro = InflowHydrograph([0.0, 100.0], [20.0, 20.0], width=10.0)  # Constant 20 m³/s
+
+        # Apply inflow on left boundary at t=0
+        apply_inflow_boundaries!(state, hydro, 0.0, (true, false, false, false))
+
+        # Left boundary should have inflow flux = Q/width = 20/10 = 2 m²/s
+        @test all(state.qx[1, :] .≈ 2.0)
+        # Other boundaries unchanged
+        @test all(state.qx[10, :] .== 0.0)
+    end
+
+    @testset "apply_rating_curve_boundaries!" begin
+        grid = Grid(10, 10, 10.0)
+        state = SimulationState(grid)
+
+        # Set water depth at boundary
+        state.h .= 1.0  # 1m depth
+        state.qx .= 0.0
+
+        # Rating curve: Q = 5 * h^1.5
+        rc = RatingCurve(5.0, 1.5, 0.0)
+
+        # Apply on right boundary (outflow) - note: no topo parameter
+        apply_rating_curve_boundaries!(state, rc, (false, true, false, false), grid)
+
+        # Right boundary should have some outflow (non-zero)
+        @test any(state.qx[10, 2:9] .> 0)
+    end
+
+    @testset "Open Boundaries with Outflow Tracking" begin
+        grid = Grid(10, 10, 10.0)
+        state = SimulationState(grid)
+        state.h .= 1.0
+        state.qx .= 0.0
+        state.qy .= 0.0
+
+        # Set outward flow at boundaries
+        state.qx[9, :] .= 0.5  # Flow to right
+        state.qy[:, 9] .= 0.5  # Flow to top
+
+        # Apply open boundaries with grid for outflow tracking
+        apply_open_boundaries!(state, (true, true, true, true), grid)
+
+        # Outflow should be extrapolated to boundaries
+        @test all(state.qx[10, :] .≈ 0.5)
+        @test all(state.qy[:, 10] .≈ 0.5)
+    end
+end

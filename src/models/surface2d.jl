@@ -31,6 +31,8 @@ Accumulates simulation results over time for post-processing and hazard analysis
 - `max_depth::Matrix{T}`: Maximum water depth at each cell (m)
 - `arrival_time::Matrix{T}`: Time of first inundation (s), Inf if never wet
 - `max_velocity::Matrix{T}`: Maximum velocity magnitude at each cell (m/s)
+- `velocity_u_at_max::Matrix{T}`: x-velocity component at time of max velocity (m/s)
+- `velocity_v_at_max::Matrix{T}`: y-velocity component at time of max velocity (m/s)
 - `max_hazard::Matrix{T}`: Maximum hazard rating h×v (m²/s) - DEFRA/EA standard
 - `max_froude::Matrix{T}`: Maximum Froude number for flow regime tracking
 - `total_duration::Matrix{T}`: Total inundation duration (s)
@@ -42,6 +44,8 @@ mutable struct ResultsAccumulator{T<:AbstractFloat}
     max_depth::Matrix{T}
     arrival_time::Matrix{T}
     max_velocity::Matrix{T}
+    velocity_u_at_max::Matrix{T}     # x-velocity at max velocity time
+    velocity_v_at_max::Matrix{T}     # y-velocity at max velocity time
     max_hazard::Matrix{T}
     max_froude::Matrix{T}
     total_duration::Matrix{T}
@@ -69,6 +73,8 @@ function ResultsAccumulator(grid::Grid{T}, output_points::Vector{Tuple{Int,Int}}
         zeros(T, nx, ny),           # max_depth
         fill(T(Inf), nx, ny),       # arrival_time (Inf = never arrived)
         zeros(T, nx, ny),           # max_velocity
+        zeros(T, nx, ny),           # velocity_u_at_max
+        zeros(T, nx, ny),           # velocity_v_at_max
         zeros(T, nx, ny),           # max_hazard (h×v)
         zeros(T, nx, ny),           # max_froude
         zeros(T, nx, ny),           # total_duration
@@ -88,6 +94,77 @@ Returns h × (v + 0.5) + debris factor for depths > 0.25m per DEFRA guidance.
 Simplified version uses h × v directly.
 """
 hazard_rating(h::T, v::T) where T = h * v
+
+"""
+    velocity_direction(u, v)
+
+Compute velocity direction in radians from velocity components.
+
+Returns angle from positive x-axis (east), counter-clockwise positive.
+Range: [-π, π]
+"""
+velocity_direction(u::T, v::T) where T = atan(v, u)
+
+"""
+    velocity_direction_degrees(u, v)
+
+Compute velocity direction in degrees from velocity components.
+
+Returns angle from positive x-axis (east), counter-clockwise positive.
+Range: [-180, 180]
+"""
+velocity_direction_degrees(u::T, v::T) where T = rad2deg(atan(v, u))
+
+"""
+    velocity_direction_compass(u, v)
+
+Compute velocity direction as compass bearing (degrees from north, clockwise).
+
+Returns bearing in range [0, 360).
+"""
+function velocity_direction_compass(u::T, v::T) where T
+    angle = T(90) - rad2deg(atan(v, u))  # Convert math angle to compass
+    mod(angle, T(360))  # Ensure [0, 360)
+end
+
+"""
+    compute_velocity_direction(results::ResultsAccumulator)
+
+Compute velocity direction field (radians) from stored velocity components.
+
+Returns matrix of directions at time of maximum velocity.
+"""
+function compute_velocity_direction(results::ResultsAccumulator{T}) where T
+    direction = similar(results.velocity_u_at_max)
+    @inbounds for j in axes(direction, 2), i in axes(direction, 1)
+        u = results.velocity_u_at_max[i, j]
+        v = results.velocity_v_at_max[i, j]
+        direction[i, j] = (u == zero(T) && v == zero(T)) ? zero(T) : atan(v, u)
+    end
+    direction
+end
+
+"""
+    compute_velocity_direction_compass(results::ResultsAccumulator)
+
+Compute velocity direction field as compass bearings (degrees from north).
+
+Returns matrix of compass bearings at time of maximum velocity.
+"""
+function compute_velocity_direction_compass(results::ResultsAccumulator{T}) where T
+    direction = similar(results.velocity_u_at_max)
+    @inbounds for j in axes(direction, 2), i in axes(direction, 1)
+        u = results.velocity_u_at_max[i, j]
+        v = results.velocity_v_at_max[i, j]
+        if u == zero(T) && v == zero(T)
+            direction[i, j] = zero(T)
+        else
+            angle = T(90) - rad2deg(atan(v, u))
+            direction[i, j] = mod(angle, T(360))
+        end
+    end
+    direction
+end
 
 """
     froude_number(v, h, g)
@@ -143,9 +220,11 @@ function update_results!(results::ResultsAccumulator{T}, state::SimulationState{
             v = qy[i, j] / depth
             vel = sqrt(u^2 + v^2)
 
-            # Max velocity
+            # Max velocity and direction (store components at max velocity)
             if vel > results.max_velocity[i, j]
                 results.max_velocity[i, j] = vel
+                results.velocity_u_at_max[i, j] = u
+                results.velocity_v_at_max[i, j] = v
             end
 
             # Max hazard rating (h × v) - key flood damage indicator

@@ -70,6 +70,7 @@ using DelimitedFiles
 using JSON3
 using LinearAlgebra
 using Random
+using Statistics
 using TOML
 
 # Version
@@ -120,7 +121,9 @@ export DrainageState, storage_volume
 
 # Export infiltration (included above for dependency ordering)
 export InfiltrationParameters, InfiltrationState, available_storage
+export SpatialInfiltrationParameters, SOIL_PARAMETERS, SOIL_TYPE_IDS
 export infiltration_rate, apply_infiltration!, total_infiltration
+export infiltration_capacity_remaining, pervious_fraction
 
 # =============================================================================
 # Numerics
@@ -135,22 +138,43 @@ export compute_velocity, water_surface_elevation, water_surface_elevation!
 export surface_gradient, surface_gradient!
 export is_wet, wet_dry_factor, limit_flux_wetdry!, limit_froude
 export face_depth_x, face_depth_y, compute_flux_x!, compute_flux_y!
-export BoundaryType, CLOSED, OPEN, FIXED_DEPTH, BoundaryCondition
+# Export boundary conditions
+export BoundaryType, CLOSED, OPEN, FIXED_DEPTH, INFLOW, TIDAL, RATING_CURVE
+export BoundaryCondition, BoundaryTimeSeries, interpolate_boundary
+export TidalBoundary, tidal_level
+export InflowHydrograph, inflow_discharge, inflow_flux
+export RatingCurve, rating_discharge
+export get_boundary_value
 export apply_boundaries!, apply_closed_boundaries!, apply_open_boundaries!
-export apply_fixed_depth_boundaries!, enforce_positive_depth!
+export apply_fixed_depth_boundaries!, apply_inflow_boundaries!, apply_rating_curve_boundaries!
+export enforce_positive_depth!
 
 # =============================================================================
 # Physics (infiltration already included above)
 # =============================================================================
 include("physics/friction.jl")
 include("physics/rainfall.jl")
+include("physics/evaporation.jl")
 include("physics/mass_balance.jl")
 
 # Export physics (infiltration exports already above)
 export friction_slope, friction_factor, apply_friction!
+
+# Export rainfall (uniform and spatial)
 export apply_rainfall!, apply_rainfall_spatial!, cumulative_rainfall
-export MassBalance, reset!, update_volume!, add_rainfall!, add_outflow!, add_infiltration!
+export SpatialRainfallEvent, spatial_rainfall_rate, spatial_rainfall_rate_ms
+export total_rainfall_volume, max_intensity, mean_areal_rainfall
+
+# Export evaporation
+export EvaporationParameters, EvaporationTimeSeries, MeteorologicalData
+export evaporation_rate, apply_evaporation!, daily_evaporation
+export saturation_vapor_pressure, penman_monteith_et, priestley_taylor_et, hargreaves_et
+
+# Export mass balance
+export MassBalance, reset!, update_volume!
+export add_rainfall!, add_inflow!, add_outflow!, add_infiltration!, add_evaporation!, add_drainage_exchange!
 export mass_error, relative_mass_error, compute_mass_balance, check_mass_balance
+export total_inputs, total_outputs, mass_balance_summary, print_mass_balance
 
 # =============================================================================
 # IO
@@ -179,6 +203,8 @@ export SimulationWorkspace, step!, update_depth!, run_simulation!, run_simulatio
 export SimulationResults, log_progress
 export ResultsAccumulator, update_results!, record_output!
 export hazard_rating, froude_number, hazard_category, summarize_hazard
+export velocity_direction, velocity_direction_degrees, velocity_direction_compass
+export compute_velocity_direction, compute_velocity_direction_compass
 export RunConfig, create_run_config
 export RunMetadata, create_metadata, get_git_commit
 export SimulationError, save_snapshot
