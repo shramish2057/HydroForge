@@ -37,9 +37,28 @@ function write_geotiff(path::String, data::Matrix, grid::Grid)
 end
 
 """
-    write_hydrograph_csv(path::String, hydrograph::Vector{Tuple{T,T}}) where T
+    write_hydrograph_csv(path::String, hydrograph::Vector{NTuple{4,T}}) where T
 
 Write point hydrograph to CSV file.
+
+# Arguments
+- `path`: Output file path
+- `hydrograph`: Vector of (time, depth, qx, qy) tuples
+"""
+function write_hydrograph_csv(path::String, hydrograph::Vector{NTuple{4,T}}) where T
+    open(path, "w") do io
+        println(io, "time,depth,qx,qy")
+        for (t, h, qx, qy) in hydrograph
+            println(io, "$t,$h,$qx,$qy")
+        end
+    end
+    path
+end
+
+"""
+    write_hydrograph_csv(path::String, hydrograph::Vector{Tuple{T,T}}) where T
+
+Write point hydrograph to CSV file (2-tuple variant for backwards compatibility).
 
 # Arguments
 - `path`: Output file path
@@ -92,14 +111,14 @@ Container for all simulation outputs.
 - `max_depth`: Maximum water depth reached at each cell (m)
 - `arrival_time`: Time when water first arrived at each cell (s)
 - `max_velocity`: Maximum velocity magnitude at each cell (m/s)
-- `point_hydrographs`: Time series at specified output points
+- `point_hydrographs`: Time series at specified output points - (time, depth, qx, qy) tuples
 - `metadata`: Run metadata dictionary
 """
 struct ResultsPackage{T<:AbstractFloat}
     max_depth::Matrix{T}
     arrival_time::Matrix{T}
     max_velocity::Matrix{T}
-    point_hydrographs::Dict{Tuple{Int,Int}, Vector{Tuple{T,T}}}
+    point_hydrographs::Dict{Tuple{Int,Int}, Vector{NTuple{4,T}}}
     metadata::Dict{String,Any}
 end
 

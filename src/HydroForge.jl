@@ -4,7 +4,8 @@
 Real-Time Urban Flood Risk Simulator.
 
 A high-performance, open-source platform for simulating urban stormwater
-runoff and surface inundation using the shallow water equations.
+runoff, drainage system performance, and surface inundation using coupled
+1D-2D hydrodynamic modeling.
 
 ## Quick Start
 
@@ -16,10 +17,23 @@ HydroForge.run_demo()
 
 # Run a custom scenario
 HydroForge.run("path/to/scenario.toml")
+
+# Run coupled 1D-2D simulation
+state = CoupledState(grid, network)
+results = run_coupled!(state, coupled_scenario)
 ```
+
+## Core Capabilities
+
+- **2D Surface Flow**: Local inertial approximation of shallow water equations
+- **1D Drainage Network**: Pipe flow using kinematic/dynamic wave routing
+- **1D-2D Coupling**: Inlet/outlet exchange between surface and underground
+- **Hazard Analysis**: DEFRA/EA FD2320 compliant hazard rating
+- **Green-Ampt Infiltration**: Soil-based infiltration modeling
 
 ## Main Types
 
+### Surface Flow
 - `Grid`: Computational grid definition
 - `Topography`: Terrain and surface properties
 - `SimulationState`: Current simulation state (depth, discharge)
@@ -27,13 +41,26 @@ HydroForge.run("path/to/scenario.toml")
 - `RainfallEvent`: Rainfall time series
 - `Scenario`: Complete simulation scenario
 
+### Drainage Network
+- `Pipe`, `CircularPipe`, `RectangularPipe`: Pipe geometry
+- `Junction`: Manhole/storage nodes
+- `Inlet`: Surface-to-network connections (grate, curb, etc.)
+- `Outlet`: Network outfalls
+- `DrainageNetwork`: Complete network definition
+- `DrainageState`: Current network state
+
+### Coupled Simulation
+- `CoupledScenario`: Combined surface + drainage scenario
+- `CoupledState`: Combined simulation state
+- `CoupledResults`: Results from coupled simulation
+
 ## Modules
 
 - `HydroForge.Types`: Core data types
 - `HydroForge.Numerics`: Numerical methods (flux, timestep)
-- `HydroForge.Physics`: Physical processes (friction, rainfall)
+- `HydroForge.Physics`: Physical processes (friction, rainfall, infiltration)
 - `HydroForge.IO`: Input/output functions
-- `HydroForge.API`: HTTP API server (Phase 12+)
+- `HydroForge.API`: HTTP API server
 
 """
 module HydroForge
@@ -67,6 +94,9 @@ include("physics/infiltration.jl")
 # Scenario uses InfiltrationParameters
 include("types/scenario.jl")
 
+# Drainage network types
+include("types/drainage.jl")
+
 # Export types
 export Grid, cell_area, total_area, extent, cell_centers_x, cell_centers_y, cell_index
 export Topography, min_elevation, max_elevation, elevation_range, mean_roughness
@@ -75,6 +105,18 @@ export wet_cells, wet_fraction, max_velocity, copy_state, reset!
 export SimulationParameters, validate
 export RainfallEvent, rainfall_rate, rainfall_rate_ms, total_rainfall, duration, peak_intensity
 export Scenario
+
+# Export drainage types
+export PipeCrossSection, CircularPipe, RectangularPipe
+export flow_area, wetted_perimeter, hydraulic_radius, top_width, full_area, full_depth
+export PipeSegment, slope, is_adverse, full_flow_capacity
+export JunctionType, MANHOLE, STORAGE, OUTFALL, DIVIDER
+export Junction, rim_elevation, is_surcharged
+export InletType, GRATE, CURB, COMBINATION, SLOTTED, DROP
+export Inlet, inlet_opening_area, inlet_perimeter
+export Outlet
+export DrainageNetwork, get_pipe, get_junction, get_inlet, n_pipes, n_junctions, n_inlets
+export DrainageState, storage_volume
 
 # Export infiltration (included above for dependency ordering)
 export InfiltrationParameters, InfiltrationState, available_storage
@@ -129,8 +171,10 @@ export validate_dem, validate_roughness, validate_rainfall, validate_scenario
 # =============================================================================
 include("models/surface2d.jl")
 include("models/simulation.jl")
+include("models/drainage1d.jl")
+include("models/coupling.jl")
 
-# Export models
+# Export models - 2D surface
 export SimulationWorkspace, step!, update_depth!, run_simulation!, run_simulation_simple!
 export SimulationResults, log_progress
 export ResultsAccumulator, update_results!, record_output!
@@ -139,6 +183,18 @@ export RunConfig, create_run_config
 export RunMetadata, create_metadata, get_git_commit
 export SimulationError, save_snapshot
 export run, run_demo, load_scenario, save_results, save_metadata, validate_scenario_file
+
+# Export models - 1D drainage
+export manning_flow, normal_depth
+export PipeFlowResult, compute_pipe_flow
+export DrainageWorkspace, compute_dt_drainage, step_drainage!, run_drainage!
+
+# Export models - 1D-2D coupling
+export InletFlowType, WEIR_FLOW, ORIFICE_FLOW, TRANSITION_FLOW, NO_FLOW
+export compute_inlet_flow, compute_outlet_return
+export CoupledState, CoupledWorkspace, CoupledScenario
+export compute_exchange_flows!, apply_exchange_to_surface!
+export step_coupled!, compute_dt_coupled, CoupledResults, run_coupled!
 
 # =============================================================================
 # CLI

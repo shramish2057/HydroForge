@@ -26,4 +26,12 @@ using HydroForge
         include("test_integration.jl")
     end
 
+    @testset "Drainage 1D-2D" begin
+        include("test_drainage.jl")
+    end
+
+    @testset "CLI" begin
+        include("test_cli.jl")
+    end
+
 end
