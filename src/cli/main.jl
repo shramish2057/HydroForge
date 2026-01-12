@@ -522,6 +522,10 @@ function cmd_demo(args::ParsedArgs)
 end
 
 function cmd_validate(args::ParsedArgs)
+    if "help" in keys(args.options)
+        return nothing  # Help already shown
+    end
+
     if isempty(args.positional)
         status_error("Missing file path")
         println("Usage: hydroforge validate <scenario.toml>")
@@ -580,6 +584,10 @@ function cmd_validate(args::ParsedArgs)
 end
 
 function cmd_benchmark(args::ParsedArgs)
+    if "help" in keys(args.options)
+        return nothing  # Help already shown
+    end
+
     println()
     println(bold("HydroForge Performance Benchmark"))
     println(dim("="^50))
@@ -721,6 +729,7 @@ const CLI_COMMANDS = [
         "hydroforge validate <scenario.toml>",
         [
             CLIOption("", "strict", "Treat warnings as errors", false, false, false),
+            CLIOption("h", "help", "Show help for this command", false, nothing, false),
         ],
         cmd_validate
     ),
@@ -738,6 +747,7 @@ const CLI_COMMANDS = [
         [
             CLIOption("", "quick", "Run quick benchmark (smaller grids)", false, false, false),
             CLIOption("", "full", "Run full benchmark (includes large grids)", false, false, false),
+            CLIOption("h", "help", "Show help for this command", false, nothing, false),
         ],
         cmd_benchmark
     ),

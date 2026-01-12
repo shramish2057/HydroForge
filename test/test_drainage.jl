@@ -239,7 +239,7 @@ end
                                verbosity=0)
 
         @test results["step_count"] > 0
-        @test results["wall_time"] > 0
+        @test results["wall_time"] >= 0  # Can be 0 on fast systems (e.g., Windows CI)
         @test results["total_inlet_volume"] > 0
     end
 end

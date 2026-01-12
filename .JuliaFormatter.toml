@@ -24,4 +24,3 @@ trailing_comma = true
 join_lines_based_on_source = true
 indent_submodule = false
 separate_kwargs_with_semicolon = false
-surround_wherecolon = true
