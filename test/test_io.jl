@@ -211,7 +211,7 @@ end
     topo = Topography(elevation, 0.03, grid)
     rainfall = RainfallEvent([0.0, 1800.0, 3600.0], [0.0, 50.0, 0.0])
     params = SimulationParameters(t_end=3600.0)
-    scenario = Scenario("Round-trip Test", grid, topo, params, rainfall, [], temp_dir)
+    scenario = Scenario("Round-trip Test", grid, topo, params, rainfall, Tuple{Int,Int}[], temp_dir)
 
     # Write inputs
     writedlm(joinpath(temp_dir, "dem.txt"), elevation, ' ')
