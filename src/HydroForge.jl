@@ -54,12 +54,17 @@ const HYDROFORGE_VERSION = "0.1.0-dev"
 include("config/defaults.jl")
 
 # =============================================================================
-# Core Types
+# Core Types (ordered for dependencies)
 # =============================================================================
 include("types/grid.jl")
 include("types/topography.jl")
 include("types/state.jl")
 include("types/parameters.jl")
+
+# Infiltration types need to be defined before Scenario
+include("physics/infiltration.jl")
+
+# Scenario uses InfiltrationParameters
 include("types/scenario.jl")
 
 # Export types
@@ -70,6 +75,10 @@ export wet_cells, wet_fraction, max_velocity, copy_state, reset!
 export SimulationParameters, validate
 export RainfallEvent, rainfall_rate, rainfall_rate_ms, total_rainfall, duration, peak_intensity
 export Scenario
+
+# Export infiltration (included above for dependency ordering)
+export InfiltrationParameters, InfiltrationState, available_storage
+export infiltration_rate, apply_infiltration!, total_infiltration
 
 # =============================================================================
 # Numerics
@@ -89,18 +98,15 @@ export apply_boundaries!, apply_closed_boundaries!, apply_open_boundaries!
 export apply_fixed_depth_boundaries!, enforce_positive_depth!
 
 # =============================================================================
-# Physics
+# Physics (infiltration already included above)
 # =============================================================================
 include("physics/friction.jl")
 include("physics/rainfall.jl")
-include("physics/infiltration.jl")
 include("physics/mass_balance.jl")
 
-# Export physics
+# Export physics (infiltration exports already above)
 export friction_slope, friction_factor, apply_friction!
 export apply_rainfall!, apply_rainfall_spatial!, cumulative_rainfall
-export InfiltrationParameters, InfiltrationState, available_storage
-export infiltration_rate, apply_infiltration!, total_infiltration
 export MassBalance, reset!, update_volume!, add_rainfall!, add_outflow!, add_infiltration!
 export mass_error, relative_mass_error, compute_mass_balance, check_mass_balance
 
@@ -125,7 +131,8 @@ include("models/surface2d.jl")
 include("models/simulation.jl")
 
 # Export models
-export SimulationWorkspace, step!, update_depth!, run_simulation!
+export SimulationWorkspace, step!, update_depth!, run_simulation!, run_simulation_simple!
+export SimulationResults, log_progress
 export ResultsAccumulator, update_results!, record_output!
 export RunConfig, create_run_config
 export RunMetadata, create_metadata, get_git_commit

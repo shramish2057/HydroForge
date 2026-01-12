@@ -110,6 +110,7 @@ Complete simulation scenario bundling all inputs.
 - `topography::Topography{T}`: Terrain and surface data
 - `parameters::SimulationParameters{T}`: Runtime parameters
 - `rainfall::RainfallEvent{T}`: Rainfall input
+- `infiltration::Union{InfiltrationParameters{T}, Nothing}`: Infiltration parameters (optional)
 - `output_points::Vector{Tuple{Int,Int}}`: Points for time series output
 - `output_dir::String`: Directory for output files
 """
@@ -119,10 +120,11 @@ struct Scenario{T<:AbstractFloat}
     topography::Topography{T}
     parameters::SimulationParameters{T}
     rainfall::RainfallEvent{T}
+    infiltration::Union{InfiltrationParameters{T}, Nothing}
     output_points::Vector{Tuple{Int,Int}}
     output_dir::String
 
-    function Scenario{T}(name, grid, topography, parameters, rainfall,
+    function Scenario{T}(name, grid, topography, parameters, rainfall, infiltration,
                          output_points, output_dir) where T
         # Validate dimensions match
         (grid.nx, grid.ny) == size(topography.elevation) ||
@@ -134,14 +136,23 @@ struct Scenario{T<:AbstractFloat}
                 throw(ArgumentError("Output point ($i, $j) outside grid bounds"))
         end
 
-        new{T}(name, grid, topography, parameters, rainfall, output_points, output_dir)
+        new{T}(name, grid, topography, parameters, rainfall, infiltration, output_points, output_dir)
     end
 end
 
+# Full constructor
+function Scenario(name::String, grid::Grid{T}, topography::Topography{T},
+                  parameters::SimulationParameters{T}, rainfall::RainfallEvent{T},
+                  infiltration::Union{InfiltrationParameters{T}, Nothing},
+                  output_points::Vector{Tuple{Int,Int}}, output_dir::String) where T
+    Scenario{T}(name, grid, topography, parameters, rainfall, infiltration, output_points, output_dir)
+end
+
+# Backward-compatible constructor without infiltration
 function Scenario(name::String, grid::Grid{T}, topography::Topography{T},
                   parameters::SimulationParameters{T}, rainfall::RainfallEvent{T},
                   output_points::Vector{Tuple{Int,Int}}, output_dir::String) where T
-    Scenario{T}(name, grid, topography, parameters, rainfall, output_points, output_dir)
+    Scenario{T}(name, grid, topography, parameters, rainfall, nothing, output_points, output_dir)
 end
 
 """

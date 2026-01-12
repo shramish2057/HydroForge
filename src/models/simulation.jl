@@ -4,74 +4,7 @@
 using Dates
 using Random
 
-"""
-    ResultsAccumulator{T}
-
-Accumulates simulation results over time.
-"""
-mutable struct ResultsAccumulator{T<:AbstractFloat}
-    max_depth::Matrix{T}
-    arrival_time::Matrix{T}
-    max_velocity::Matrix{T}
-    point_hydrographs::Dict{Tuple{Int,Int}, Vector{Tuple{T,T}}}
-    output_points::Vector{Tuple{Int,Int}}
-    arrival_threshold::T
-end
-
-"""
-    ResultsAccumulator(grid::Grid{T}, output_points) where T
-
-Create results accumulator for given grid and output points.
-"""
-function ResultsAccumulator(grid::Grid{T}, output_points::Vector{Tuple{Int,Int}};
-                            arrival_threshold::T=T(0.01)) where T
-    nx, ny = grid.nx, grid.ny
-    ResultsAccumulator{T}(
-        zeros(T, nx, ny),           # max_depth
-        fill(T(Inf), nx, ny),       # arrival_time (Inf = never arrived)
-        zeros(T, nx, ny),           # max_velocity
-        Dict(pt => Tuple{T,T}[] for pt in output_points),
-        output_points,
-        arrival_threshold
-    )
-end
-
-"""
-    update_results!(results::ResultsAccumulator, state::SimulationState)
-
-Update accumulated results with current state.
-"""
-function update_results!(results::ResultsAccumulator{T}, state::SimulationState{T}) where T
-    h = state.h
-    t = state.t
-
-    @inbounds for j in axes(h, 2), i in axes(h, 1)
-        # Update max depth
-        if h[i, j] > results.max_depth[i, j]
-            results.max_depth[i, j] = h[i, j]
-        end
-
-        # Update arrival time
-        if h[i, j] > results.arrival_threshold && results.arrival_time[i, j] == T(Inf)
-            results.arrival_time[i, j] = t
-        end
-    end
-
-    nothing
-end
-
-"""
-    record_output!(results::ResultsAccumulator, state::SimulationState)
-
-Record point hydrograph values at current time.
-"""
-function record_output!(results::ResultsAccumulator{T}, state::SimulationState{T}) where T
-    for (i, j) in results.output_points
-        push!(results.point_hydrographs[(i, j)], (state.t, state.h[i, j]))
-    end
-    nothing
-end
-
+# Note: ResultsAccumulator, update_results!, and record_output! are defined in surface2d.jl
 
 """
     RunConfig
@@ -198,7 +131,10 @@ function run(scenario_path::String; output_dir::Union{String,Nothing}=nothing)
 
         # Run simulation
         @info "Running simulation..." t_end=scenario.parameters.t_end
-        results = run_simulation!(state, scenario)
+        sim_results = run_simulation!(state, scenario; verbosity=0)
+
+        # Extract accumulator for saving
+        results = sim_results.accumulator
 
         # Save results
         save_results(config, results, scenario)
@@ -208,14 +144,17 @@ function run(scenario_path::String; output_dir::Union{String,Nothing}=nothing)
         metadata.status = :completed
         save_metadata(config, metadata)
 
-        @info "Simulation completed" run_id=config.run_id output_dir=config.output_dir
+        @info "Simulation completed" run_id=config.run_id output_dir=config.output_dir steps=sim_results.step_count wall_time=round(sim_results.wall_time, digits=2)
 
         # Return summary
         Dict(
             "run_id" => config.run_id,
             "status" => :completed,
             "output_dir" => config.output_dir,
-            "max_depth" => maximum(results.max_depth)
+            "max_depth" => maximum(results.max_depth),
+            "steps" => sim_results.step_count,
+            "wall_time" => sim_results.wall_time,
+            "mass_error_pct" => relative_mass_error(sim_results.mass_balance) * 100
         )
 
     catch e

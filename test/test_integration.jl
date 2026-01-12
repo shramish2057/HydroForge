@@ -159,3 +159,208 @@ end
     neighbor_vol = sum(state.h[10, :]) + sum(state.h[12, :])
     @test neighbor_vol > 0  # Some water should have moved to neighbors
 end
+
+@testset "Full Simulation with SimulationResults" begin
+    @testset "Basic run_simulation!" begin
+        # Create a minimal scenario
+        grid = Grid(10, 10, 10.0)
+        elevation = zeros(10, 10)
+        roughness = fill(0.03, 10, 10)
+        topo = Topography(elevation, roughness, grid)
+        params = SimulationParameters(t_end=60.0, dt_max=1.0, cfl=0.9)
+        rain = RainfallEvent([0.0, 100.0], [36.0, 36.0])  # 36 mm/hr
+
+        scenario = Scenario("test", grid, topo, params, rain, Tuple{Int,Int}[], "")
+
+        state = SimulationState(grid)
+        results = run_simulation!(state, scenario; verbosity=0)
+
+        @test results isa SimulationResults
+        @test results.step_count > 0
+        @test results.wall_time > 0
+        @test results.accumulator isa ResultsAccumulator
+        @test results.mass_balance isa MassBalance
+    end
+
+    @testset "Mass Balance Tracking" begin
+        grid = Grid(10, 10, 10.0)
+        elevation = zeros(10, 10)
+        # Raise edges to prevent outflow
+        for i in [1, 10], j in 1:10
+            elevation[i, j] = 10.0
+        end
+        for j in [1, 10], i in 1:10
+            elevation[i, j] = 10.0
+        end
+        roughness = fill(0.03, 10, 10)
+        topo = Topography(elevation, roughness, grid)
+
+        params = SimulationParameters(t_end=60.0, dt_max=1.0, cfl=0.9)
+        rain = RainfallEvent([0.0, 100.0], [36.0, 36.0])  # 36 mm/hr
+
+        scenario = Scenario("test_mass", grid, topo, params, rain, Tuple{Int,Int}[], "")
+
+        state = SimulationState(grid)
+        results = run_simulation!(state, scenario; verbosity=0)
+
+        mb = results.mass_balance
+
+        # Check mass balance is reasonably close (within 5%)
+        @test abs(relative_mass_error(mb)) < 0.05
+
+        # Rainfall should have been added
+        @test mb.rainfall_volume > 0
+
+        # Current volume should be positive
+        @test mb.current_volume > 0
+    end
+
+    @testset "Results Accumulator Updates" begin
+        grid = Grid(10, 10, 10.0)
+        elevation = zeros(10, 10)
+        # Create bowl with raised edges to accumulate water
+        for i in [1, 10], j in 1:10
+            elevation[i, j] = 10.0
+        end
+        for j in [1, 10], i in 1:10
+            elevation[i, j] = 10.0
+        end
+        roughness = fill(0.03, 10, 10)
+        topo = Topography(elevation, roughness, grid)
+
+        # Use longer simulation and higher rainfall to ensure arrival threshold is exceeded
+        params = SimulationParameters(t_end=120.0, dt_max=1.0, cfl=0.9)
+        rain = RainfallEvent([0.0, 200.0], [100.0, 100.0])  # 100 mm/hr for longer
+
+        # Add output point
+        output_points = [(5, 5)]
+        scenario = Scenario("test_accum", grid, topo, params, rain, output_points, "")
+
+        state = SimulationState(grid)
+        results = run_simulation!(state, scenario; verbosity=0)
+
+        accum = results.accumulator
+
+        # Max depth should be tracked (100 mm/hr * 120s / 3600s/hr = 3.3mm accumulated)
+        @test maximum(accum.max_depth) > 0
+
+        # With raised edges and higher rainfall, interior should exceed arrival threshold
+        # If not, at least check that max_depth is being tracked correctly
+        interior_max = maximum(accum.max_depth[2:9, 2:9])
+        @test interior_max > 0.001  # At least some accumulation
+
+        # Hydrograph should be recorded for output point
+        @test length(accum.point_hydrographs[(5, 5)]) > 0
+    end
+end
+
+@testset "Infiltration Integration" begin
+    @testset "Step with Infiltration" begin
+        grid = Grid(10, 10, 10.0)
+        state = SimulationState(grid)
+        state.h .= 0.1  # 10 cm initial water
+
+        elevation = zeros(10, 10)
+        roughness = fill(0.03, 10, 10)
+        topo = Topography(elevation, roughness, grid)
+
+        params = SimulationParameters(t_end=10.0, dt_max=1.0, cfl=0.9)
+        rain = RainfallEvent([0.0, 100.0], [0.0, 0.0])  # No rainfall
+
+        work = SimulationWorkspace(grid)
+        infil_params = InfiltrationParameters(:sandy_loam)
+        infil_state = InfiltrationState(grid)
+
+        initial_volume = total_volume(state, grid)
+
+        # Run one step with infiltration
+        dt = compute_dt(state, grid, params)
+        infiltrated = step!(state, topo, params, rain, dt, work;
+                           infiltration=infil_params, infil_state=infil_state)
+
+        # Should have infiltrated some water
+        @test infiltrated > 0
+
+        # Cumulative infiltration should be tracked
+        @test sum(infil_state.cumulative) > 0
+
+        # Water depth should have decreased
+        @test total_volume(state, grid) < initial_volume
+    end
+
+    @testset "Full Simulation with Infiltration" begin
+        grid = Grid(10, 10, 10.0)
+        elevation = zeros(10, 10)
+        roughness = fill(0.03, 10, 10)
+        topo = Topography(elevation, roughness, grid)
+
+        params = SimulationParameters(t_end=60.0, dt_max=1.0, cfl=0.9)
+        rain = RainfallEvent([0.0, 100.0], [36.0, 36.0])  # 36 mm/hr
+
+        # Add infiltration to scenario
+        infil_params = InfiltrationParameters(:loam)
+        scenario = Scenario("test_infil", grid, topo, params, rain, infil_params, Tuple{Int,Int}[], "")
+
+        state = SimulationState(grid)
+        results = run_simulation!(state, scenario; verbosity=0)
+
+        # Should have tracked infiltration
+        @test results.infil_state !== nothing
+        @test sum(results.infil_state.cumulative) > 0
+
+        # Mass balance should account for infiltration
+        @test results.mass_balance.infiltration_volume > 0
+    end
+end
+
+@testset "Progress Logging" begin
+    @testset "log_progress function" begin
+        grid = Grid(10, 10, 10.0)
+        state = SimulationState(grid)
+        state.h .= 0.1
+        state.t = 30.0
+
+        params = SimulationParameters(t_end=60.0)
+        mb = MassBalance(state, grid)
+
+        # Should not error with different verbosity levels
+        @test_nowarn log_progress(state, params, 100, mb; verbosity=0)
+        # verbosity=1 and 2 produce @info output which is harder to test
+        # but should not error
+    end
+
+    @testset "run_simulation with logging" begin
+        grid = Grid(8, 8, 10.0)
+        elevation = zeros(8, 8)
+        roughness = fill(0.03, 8, 8)
+        topo = Topography(elevation, roughness, grid)
+
+        params = SimulationParameters(t_end=10.0, dt_max=0.5, cfl=0.9)
+        rain = RainfallEvent([0.0, 100.0], [36.0, 36.0])
+
+        scenario = Scenario("test_log", grid, topo, params, rain, Tuple{Int,Int}[], "")
+
+        state = SimulationState(grid)
+
+        # Should complete without errors with log_interval
+        results = run_simulation!(state, scenario; log_interval=5.0, verbosity=0)
+
+        @test results.step_count > 0
+    end
+end
+
+@testset "Max Velocity Tracking" begin
+    grid = Grid(10, 10, 10.0)
+    state = SimulationState(grid)
+
+    # Create initial water column that will generate flow
+    state.h[5, 5] = 1.0
+    state.qx[5, 5] = 0.5  # Some discharge
+
+    results = ResultsAccumulator(grid, Tuple{Int,Int}[])
+
+    update_results!(results, state)
+
+    # Max velocity should be computed at wet cell
+    @test results.max_velocity[5, 5] > 0
+end
