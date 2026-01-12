@@ -1,0 +1,71 @@
+# =============================================================================
+# HydroForge .gitignore
+# =============================================================================
+
+# Julia artifacts
+Manifest.toml
+*.jl.cov
+*.jl.mem
+deps/deps.jl
+deps/build.log
+
+# Build outputs
+docs/build/
+*.so
+*.dll
+*.dylib
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.claude/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project outputs
+runs/
+outputs/
+results/
+*.log
+*.tmp
+
+# Data files (keep demo data tracked)
+data/
+!assets/demo_data/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Python (if any scripts)
+__pycache__/
+*.py[cod]
+.env
+venv/
+
+# Coverage
+coverage/
+*.lcov
+
+# Benchmarks (results, not scripts)
+benchmark/results/
+benchmark/*.json
+
+# Docker
+.docker/
+
+# Local configuration
+.env.local
+config/local.toml
+secrets/

@@ -1,0 +1,22 @@
+# HydroForge - Real-Time Urban Flood Risk Simulator
+# Julia Package Configuration
+
+name = "HydroForge"
+uuid = "a8b9c0d1-2e3f-4a5b-6c7d-8e9f0a1b2c3d"
+version = "0.1.0-dev"
+authors = ["HydroForge Contributors"]
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[compat]
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[targets]
+test = ["Test", "Statistics"]
