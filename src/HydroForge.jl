@@ -81,11 +81,12 @@ include("numerics/boundaries.jl")
 # Export numerics
 export TimestepController, compute_dt, compute_dt_array, compute_dt_smooth!, check_cfl
 export compute_velocity, water_surface_elevation, water_surface_elevation!
+export surface_gradient, surface_gradient!
 export is_wet, wet_dry_factor, limit_flux_wetdry!
 export face_depth_x, face_depth_y, compute_flux_x!, compute_flux_y!
-export BoundaryType, CLOSED, OPEN, FIXED_DEPTH
+export BoundaryType, CLOSED, OPEN, FIXED_DEPTH, BoundaryCondition
 export apply_boundaries!, apply_closed_boundaries!, apply_open_boundaries!
-export enforce_positive_depth!
+export apply_fixed_depth_boundaries!, enforce_positive_depth!
 
 # =============================================================================
 # Physics
@@ -98,7 +99,8 @@ include("physics/mass_balance.jl")
 # Export physics
 export friction_slope, friction_factor, apply_friction!
 export apply_rainfall!, apply_rainfall_spatial!, cumulative_rainfall
-export InfiltrationParameters, infiltration_rate, apply_infiltration!
+export InfiltrationParameters, InfiltrationState, available_storage
+export infiltration_rate, apply_infiltration!, total_infiltration
 export MassBalance, reset!, update_volume!, add_rainfall!, add_outflow!, add_infiltration!
 export mass_error, relative_mass_error, compute_mass_balance, check_mass_balance
 

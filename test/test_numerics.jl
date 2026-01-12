@@ -411,3 +411,97 @@ end
     @test η[2, 1] == 3.5
     @test η[2, 2] == 4.5
 end
+
+@testset "Surface Gradient" begin
+    @testset "Uniform Surface" begin
+        grid = Grid(5, 5, 10.0)
+        η = fill(1.0, 5, 5)  # Flat surface
+
+        dη_dx, dη_dy = surface_gradient(η, grid)
+
+        # Flat surface should have zero gradients
+        @test all(abs.(dη_dx) .< 1e-10)
+        @test all(abs.(dη_dy) .< 1e-10)
+    end
+
+    @testset "Sloped Surface" begin
+        grid = Grid(5, 5, 10.0)
+        η = zeros(5, 5)
+        # Create linear slope in x: η = 0.1 * x
+        for i in 1:5, j in 1:5
+            η[i, j] = 0.1 * (i - 1) * grid.dx
+        end
+
+        dη_dx, dη_dy = surface_gradient(η, grid)
+
+        # Interior should have gradient 0.1
+        @test dη_dx[3, 3] ≈ 0.1 atol=1e-10
+        # Y-gradient should be zero
+        @test dη_dy[3, 3] ≈ 0.0 atol=1e-10
+    end
+
+    @testset "In-place Gradient" begin
+        grid = Grid(5, 5, 10.0)
+        η = ones(5, 5)
+        dη_dx = zeros(5, 5)
+        dη_dy = zeros(5, 5)
+
+        surface_gradient!(dη_dx, dη_dy, η, grid)
+
+        @test all(abs.(dη_dx) .< 1e-10)
+        @test all(abs.(dη_dy) .< 1e-10)
+    end
+end
+
+@testset "Fixed Depth Boundaries" begin
+    @testset "All Sides" begin
+        state = SimulationState(10, 10)
+        state.h .= 0.5
+
+        apply_fixed_depth_boundaries!(state, 1.0)
+
+        # All boundaries should be 1.0
+        @test all(state.h[1, :] .== 1.0)
+        @test all(state.h[10, :] .== 1.0)
+        @test all(state.h[:, 1] .== 1.0)
+        @test all(state.h[:, 10] .== 1.0)
+
+        # Interior unchanged
+        @test state.h[5, 5] == 0.5
+    end
+
+    @testset "Selective Sides" begin
+        state = SimulationState(10, 10)
+        state.h .= 0.5
+
+        # Only left and right
+        apply_fixed_depth_boundaries!(state, 1.0, (true, true, false, false))
+
+        @test all(state.h[1, :] .== 1.0)
+        @test all(state.h[10, :] .== 1.0)
+        # Bottom/top interior unchanged (corners are on left/right so they're set)
+        @test all(state.h[2:9, 1] .== 0.5)  # Bottom interior unchanged
+        @test all(state.h[2:9, 10] .== 0.5)  # Top interior unchanged
+    end
+
+    @testset "BoundaryCondition Struct" begin
+        bc = BoundaryCondition(FIXED_DEPTH, fixed_depth=0.5)
+        @test bc.type == FIXED_DEPTH
+        @test bc.fixed_depth == 0.5
+        @test bc.sides == (true, true, true, true)
+
+        bc2 = BoundaryCondition(CLOSED, sides=(true, false, true, false))
+        @test bc2.type == CLOSED
+        @test bc2.sides == (true, false, true, false)
+    end
+
+    @testset "apply_boundaries! with FIXED_DEPTH" begin
+        state = SimulationState(10, 10)
+        state.h .= 0.5
+
+        apply_boundaries!(state, FIXED_DEPTH)
+
+        # Default fixed depth is 0
+        @test all(state.h[1, :] .== 0.0)
+    end
+end

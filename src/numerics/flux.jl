@@ -102,6 +102,104 @@ function water_surface_elevation!(η::Matrix{T}, h::Matrix{T}, z::Matrix{T}) whe
 end
 
 """
+    surface_gradient(η::Matrix, grid::Grid)
+
+Compute water surface gradients using central differences.
+
+# Returns
+- `dη_dx::Matrix`: Gradient in x-direction (∂η/∂x)
+- `dη_dy::Matrix`: Gradient in y-direction (∂η/∂y)
+
+Uses second-order central differences in the interior and
+one-sided differences at boundaries.
+"""
+function surface_gradient(η::Matrix{T}, grid::Grid{T}) where T
+    nx, ny = size(η)
+    dη_dx = zeros(T, nx, ny)
+    dη_dy = zeros(T, nx, ny)
+
+    dx = grid.dx
+    dy = grid.dy
+
+    # Interior points: central differences
+    @inbounds for j in 2:ny-1, i in 2:nx-1
+        dη_dx[i, j] = (η[i+1, j] - η[i-1, j]) / (T(2) * dx)
+        dη_dy[i, j] = (η[i, j+1] - η[i, j-1]) / (T(2) * dy)
+    end
+
+    # Boundary x-gradients (one-sided)
+    @inbounds for j in 1:ny
+        # Left boundary (forward difference)
+        dη_dx[1, j] = (η[2, j] - η[1, j]) / dx
+        # Right boundary (backward difference)
+        dη_dx[nx, j] = (η[nx, j] - η[nx-1, j]) / dx
+    end
+
+    # Boundary y-gradients (one-sided)
+    @inbounds for i in 1:nx
+        # Bottom boundary (forward difference)
+        dη_dy[i, 1] = (η[i, 2] - η[i, 1]) / dy
+        # Top boundary (backward difference)
+        dη_dy[i, ny] = (η[i, ny] - η[i, ny-1]) / dy
+    end
+
+    # Corner y-gradients already handled above
+    # Interior row boundaries for y
+    @inbounds for j in [1, ny], i in 2:nx-1
+        dη_dx[i, j] = (η[i+1, j] - η[i-1, j]) / (T(2) * dx)
+    end
+
+    # Interior column boundaries for x
+    @inbounds for i in [1, nx], j in 2:ny-1
+        dη_dy[i, j] = (η[i, j+1] - η[i, j-1]) / (T(2) * dy)
+    end
+
+    (dη_dx, dη_dy)
+end
+
+"""
+    surface_gradient!(dη_dx::Matrix, dη_dy::Matrix, η::Matrix, grid::Grid)
+
+Compute water surface gradients in-place.
+"""
+function surface_gradient!(dη_dx::Matrix{T}, dη_dy::Matrix{T},
+                           η::Matrix{T}, grid::Grid{T}) where T
+    nx, ny = size(η)
+    dx = grid.dx
+    dy = grid.dy
+
+    # Interior points: central differences
+    @inbounds for j in 2:ny-1, i in 2:nx-1
+        dη_dx[i, j] = (η[i+1, j] - η[i-1, j]) / (T(2) * dx)
+        dη_dy[i, j] = (η[i, j+1] - η[i, j-1]) / (T(2) * dy)
+    end
+
+    # Boundary x-gradients (one-sided)
+    @inbounds for j in 1:ny
+        dη_dx[1, j] = (η[2, j] - η[1, j]) / dx
+        dη_dx[nx, j] = (η[nx, j] - η[nx-1, j]) / dx
+    end
+
+    # Boundary y-gradients (one-sided)
+    @inbounds for i in 1:nx
+        dη_dy[i, 1] = (η[i, 2] - η[i, 1]) / dy
+        dη_dy[i, ny] = (η[i, ny] - η[i, ny-1]) / dy
+    end
+
+    # Interior row boundaries for y
+    @inbounds for j in [1, ny], i in 2:nx-1
+        dη_dx[i, j] = (η[i+1, j] - η[i-1, j]) / (T(2) * dx)
+    end
+
+    # Interior column boundaries for x
+    @inbounds for i in [1, nx], j in 2:ny-1
+        dη_dy[i, j] = (η[i, j+1] - η[i, j-1]) / (T(2) * dy)
+    end
+
+    nothing
+end
+
+"""
     face_depth_x(h, z, i, j, direction)
 
 Compute effective depth at x-face between cells (i,j) and (i+1,j).

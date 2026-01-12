@@ -156,18 +156,121 @@ end
     @test cumulative_rainfall(rain, 0.0) ≈ 0.0
 end
 
-@testset "Infiltration Placeholder" begin
-    params = InfiltrationParameters()
-    @test infiltration_rate(0.1, params) == 0.0  # Placeholder returns 0
+@testset "Green-Ampt Infiltration" begin
+    @testset "Parameter Construction" begin
+        # Default parameters (clay loam)
+        params = InfiltrationParameters()
+        @test params.hydraulic_conductivity ≈ 1e-6
+        @test params.suction_head ≈ 0.21
+        @test params.porosity ≈ 0.46
+        @test params.initial_moisture ≈ 0.2
 
-    # Test parameter defaults
-    @test params.hydraulic_conductivity ≈ 1e-6
-    @test params.porosity ≈ 0.4
+        # Soil type constructor
+        sand_params = InfiltrationParameters(:sand)
+        @test sand_params.hydraulic_conductivity ≈ 1.2e-4
+        @test sand_params.porosity ≈ 0.44
 
-    # apply_infiltration! should do nothing (placeholder)
-    h = ones(5, 5)
-    apply_infiltration!(h, params, 1.0)
-    @test all(h .== 1.0)  # Unchanged
+        clay_params = InfiltrationParameters(:clay)
+        @test clay_params.hydraulic_conductivity ≈ 3.0e-7
+
+        # Available storage
+        @test available_storage(params) ≈ 0.26  # 0.46 - 0.2
+    end
+
+    @testset "Infiltration Rate Calculation" begin
+        params = InfiltrationParameters(:sandy_loam)
+
+        # Rate with cumulative infiltration
+        rate1 = infiltration_rate(0.1, 0.001, params)
+        rate2 = infiltration_rate(0.1, 0.01, params)
+        rate3 = infiltration_rate(0.1, 0.1, params)
+
+        # Rate should decrease as cumulative infiltration increases
+        @test rate1 > rate2 > rate3
+        @test rate1 > 0
+        @test rate3 > 0
+
+        # No infiltration with no water
+        @test infiltration_rate(0.0, 0.01, params) == 0.0
+
+        # Rate limited by max infiltration
+        params_limited = InfiltrationParameters(max_infiltration_depth=0.05)
+        @test infiltration_rate(0.1, 0.05, params_limited) == 0.0
+    end
+
+    @testset "Infiltration State" begin
+        grid = Grid(10, 10, 10.0)
+        state = InfiltrationState(grid)
+
+        @test size(state.cumulative) == (10, 10)
+        @test all(state.cumulative .== 0)
+
+        # Modify and reset
+        state.cumulative[5, 5] = 0.1
+        reset!(state)
+        @test all(state.cumulative .== 0)
+    end
+
+    @testset "Simple apply_infiltration!" begin
+        params = InfiltrationParameters(hydraulic_conductivity=1e-5)
+        h = fill(0.1, 5, 5)
+
+        apply_infiltration!(h, params, 100.0)
+
+        # Should have infiltrated K * dt = 1e-5 * 100 = 0.001 m
+        @test all(h .≈ 0.099)
+    end
+
+    @testset "Green-Ampt apply_infiltration!" begin
+        params = InfiltrationParameters(:sandy_loam)
+        h = fill(0.1, 5, 5)
+        infil_state = InfiltrationState(5, 5)
+
+        # Apply infiltration
+        infiltrated = apply_infiltration!(h, infil_state, params, 60.0)
+
+        # Should have infiltrated some water
+        @test infiltrated > 0
+        @test all(h .< 0.1)
+        @test all(infil_state.cumulative .> 0)
+
+        # Cumulative should equal depth reduction
+        depth_reduction = 0.1 - h[1, 1]
+        @test infil_state.cumulative[1, 1] ≈ depth_reduction
+    end
+
+    @testset "Infiltration Limiting" begin
+        # Test that infiltration is limited by available water
+        params = InfiltrationParameters(:sand)  # High conductivity
+        h = fill(0.0001, 5, 5)  # Very shallow water
+        infil_state = InfiltrationState(5, 5)
+
+        apply_infiltration!(h, infil_state, params, 60.0)
+
+        # Should have infiltrated all available water
+        @test all(isapprox.(h, 0.0, atol=1e-10))
+
+        # Test limiting by max depth
+        params_limited = InfiltrationParameters(max_infiltration_depth=0.001)
+        h2 = fill(0.1, 5, 5)
+        infil_state2 = InfiltrationState(5, 5)
+        infil_state2.cumulative .= 0.001  # Already at max
+
+        apply_infiltration!(h2, infil_state2, params_limited, 60.0)
+
+        # No additional infiltration
+        @test all(h2 .≈ 0.1)
+    end
+
+    @testset "Total Infiltration Volume" begin
+        grid = Grid(10, 10, 10.0)
+        state = InfiltrationState(grid)
+        state.cumulative .= 0.01  # 1 cm everywhere
+
+        vol = total_infiltration(state, grid)
+        expected = 10 * 10 * 100 * 0.01  # 100 m³
+        @test vol ≈ expected
+    end
 end
 
 @testset "Mass Balance" begin
